@@ -92,7 +92,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
@@ -248,11 +247,13 @@ Users would like to be able to address the following use cases:
 * Diffentiate between different configurations of cores and memory, for instance cores
   designated as performance versus those designated as efficiency cores 
 * Have custom plugins to optimize for particular types of workloads.  These plugins
-  may be built for performance, power reduction, or both.  <br>
+  may be built for performance, power reduction, cpu savings, et cetera.  <br>
   Note:  Currently, there are very limited sets of available topology policies.  Every
   new policy must be approved and be lockstep with the Kuberenetes release process.
 * Be able to hot-plug and test new resource managers.  
-* Be able to remove some of the complexity with current setup.
+* Be able to remove some of the complexity with current setup and, over time, reduce
+  the amount of code contained within Kubelet.  Instead, build a library with specific
+  needs.
 * Have a faster path to desired changes, without potentially impacting the core of 
   Kubernetes with every policy change. <br>
   Note that current solutions have been cropping up to allow for resource management
@@ -260,7 +261,6 @@ Users would like to be able to address the following use cases:
   and overriding current Kubelet allocation.  We should provide a path otherwise.
 * Be able to get information on the pods on the node without having to contact the
   API server, which may not have updated information. 
-* Be able to change the number of resources available on the node, at any time, and update.
 * Be able to do research, with minimum toil, on new policies and resource management strategies
 
 This design will also use the already tried and true gRPC, which is used for many other
@@ -340,17 +340,34 @@ bogged down.
 
 #### Custom workloads, such as HPC/AI/ML
 
-Custom workloads often have a desire to mix, for instance, shared and pinned cores.
-Additionally, they may 
+Custom workloads often have a desire to mix types of cores.  For instance, a workload
+should be able to have some number of static cores and some number of shared cores.
+A node should be able to allow both types of cores, without having to have one setting
+or another, and be able to pull from these pulls accordingly.  Additionally, there may 
+be a need to have some high-priority cores for higher performance and other lower-priority
+cores for other less-sensitive parts of a workloads.  In these use cases, the workloads 
+may also have particular types of NUMA splits required.
 
 #### Power optimization of workloads
 
 Cores should be able to be quickly spun up or down according to resource requirements.
+Additionally, the nodes should be as densely packed as possible regrading the abliity to
+do core use.  There should also be the ability to choose between efficiency cores and
+performance cores within newer architectures, according to workload requirements.
 
 #### Research of new resource management patterns within the cloud
 
+There are a variety of modifiers that can be placed around cores.  Static cores,
+isolated cores, shared cores, efficiency cores, and performance cores are only the
+beginning of unexplored spaces.  Being able to play with various patterns in research
+without having to be an expert in how to modify Kubelet and it's multiple internal
+managers is a big benefit to the research community.
+
 #### User-specific plugins
 
+A user may have very specific allocation patterns they require.  This sort of capability
+may be rare and not belong upstream in mainstream Kubernetes, but there should still
+be a simple way to do allow users to do their specific experiments.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -477,7 +494,7 @@ the cpuset state of the cpu manager and resource plugins and  a new policy insid
 manager which can query the compute resource store for any allocations and allocation-removals
 done by the plugin.
 
-![image](https://user-images.githubusercontent.com/1184214/215233970-fbd6c801-dc44-4c0e-88be-0078c01a8e1a.png)<br>
+![image](ExternallyManagedResourceExtension.jpg)<br>
 Fig. 2.: CCI Resource Manager Architecture inside Kubelet
 
     Pod Spec “CCIDriverName Extension”
@@ -584,7 +601,7 @@ will be sufficient the cover plugin registration, status and health-check functi
 ##### Allocation & Container Removal Flow
 
 Admission and adding a Container:<br>
-![image](https://user-images.githubusercontent.com/1184214/215234931-6e9e03f5-3e7e-4bf4-9d6d-620279d9d458.png)<br>
+![image](CCIAllocationSequenceDiagram.jpg)<br>
 Fig. 3.: Sequence of container allocation which uses CCI driver<br><br>
 
 
@@ -596,15 +613,10 @@ store. The admit call on cpu manager side will trigger the CCI policy which will
 lookup inside the store to get the assigned cpuset for the new container.  If the operation 
 fails an error will be reported back to the user. On success the data will be stored in the 
 cpu manager state which then gets accessed by add container call. All blocking rpc calls are 
-configured in alpha with a reasonable timeout. The overall operations can be summarized as
-the following sequence of steps (shown In Fig. 3.):<br>
-1-2. Admit via CCI driver<br>
-3. On Success store resource set in CCI Store/ On Failure: return error<br>
-4 – 7. Admit via CPU Manager: update state if Pod admission was successful<br>
-8 – 9. Add Container via CPU driver and CPU Manager: will trigger CRI operations and further resource configuration operations<br>
+configured in alpha with a reasonable timeout. 
 
 Container Removal:<br>
-![image](https://user-images.githubusercontent.com/1184214/215234976-23835b19-fe89-4a36-88ca-cd6b85d7de4d.png)<br>
+![image](CCIRemovalSequenceDiagram.jpg)<br>
 
 Fig.4.: Container removal sequence diagram involving cci plugins<br><br>
 The container removal case is described as a sequence in Fig.4. After registering
@@ -658,39 +670,40 @@ extending the production code to implement this enhancement.
 
 ###### Alpha
 
-*	Planned Unit tests for :
 *	CCI Resource Manager: target code cvg >=80%
 *	CCI Store: target code cvg >=80%
 *	CCI CPU Manager Policy: target code cvg >=80%
-* Integration Tests
-* CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
-* State Consistency (CPU Manager + CCI) integrateion test
-*	End-to-End tests
-*	Example mocked driver test 
+*	CCI Drivers Factory API: target code cvg >=80%
 
 ###### BETA
 
 *	Introduce fail-safety tests
-*	Further integration tests with Device Manager and DRA
-*	Integration test including static QoS and driver-based allocation
-*	End-to-End tests including Driver Allocations and cpu manager allocations
 *	Performance/Scalabilty tests
 
 
 ##### Integration tests
-
+###### Alpha
+* CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
+* State Consistency (CPU Manager + CCI) integrateion test
+###### BETA
+* CPU, Memory, Topology and CCI Manager Integration test
+*	Further integration tests with Device Manager and DRA
+*	Integration test including static QoS and driver-based allocation
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
+- <test>: <link to test coverage>
 -->
 
-- <test>: <link to test coverage>
-
 ##### e2e tests
-
+###### Alpha
+*	E2E test with mocked CCI driver 
+###### BETA
+*	End-to-End tests including both CCI Driver Allocations and cpu manager allocations
+*	End-to-End tests including CCI Driver Allocations , cpu manager allocations amd devices
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
@@ -699,9 +712,10 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
+- <test>: <link to test coverage>
 -->
 
-- <test>: <link to test coverage>
+
 
 ### Graduation Criteria
 
@@ -732,7 +746,7 @@ functionality is accessed.
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 -->
-#### Alpha
+#### Alpha to Beta
 
 - Feature implemented behind a feature flag
 - Initial e2e tests completed and enabled
@@ -745,16 +759,12 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 -	Have plugins specific to common use cases or environments
 -	Smooth integration with scheduler extensions/ plugins …
 
-#### Beta
+#### Beta to GA
 
-- Gather feedback from developers and surveys
-
-#### GA
-
+- Gather feedback from developers and surveys and integrate it
 -	Successful adoption across users
 -	Proven Components Correctness
 -	Performance tests completion
-
 - N examples of real-world usage
 
 #### Deprecation
@@ -839,9 +849,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: CCIResourceManager
+  - Components depending on the feature gate: CCIResourceManager, CCI CPU Manger Policy, Pod Association Mechaninism, CCI APIs
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -850,14 +860,14 @@ well as the [existing list] of feature gates.
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 ###### Does enabling the feature change any default behavior?
-
+No
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-
+Yes, a deletion of pods requiring cci driver will be recommended
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
@@ -870,9 +880,11 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+Pods requiring cci driver might have been handled by standard cpu manager, those will need to 
+be recreated after enabling the cci driver.
 
 ###### Are there any tests for feature enablement/disablement?
-
+Planned to include some
 <!--
 The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
@@ -907,7 +919,9 @@ can be implemented where such Pods fallback to a given std. QoS Model.
 
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
-
+Failure of CCI drivers will have impact only over pods requiring cci driver for 
+resource management. All other pods will not be impacted. THe impacted pods will
+an error message showing failure of the driver.
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -920,6 +934,8 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
+Unhealthy CCI drivers which can't get to a ready state and repeating failures 
+to allocate pods in cases of free resources.
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
@@ -927,6 +943,7 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+TBD in Beta
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
@@ -935,12 +952,14 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
+TBD in Beta
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
 ### Monitoring Requirements
 
+TBD in Beta
 <!--
 This section must be completed when targeting beta to a release.
 
@@ -949,7 +968,7 @@ previous answers based on experience in the field.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
-
+Pods will be running on the cluster which are associated to CCI drivers. 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -969,14 +988,15 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
-  - Condition name: 
+- [x] API .status
+  - Condition name: CCI Driver readiness and CCI Status field can be introduced
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-
+Pods not using CCI Driveres continue to work as before.
+Consistent state handling for Pods requiring CCI Driver and standard CPU-Manager managed pods.
 <!--
 This is your opportunity to define what "normal" quality of service looks like
 for a feature.
@@ -997,7 +1017,7 @@ question.
 <!--
 Pick one more of these and delete the rest.
 -->
-
+TBD
 - [ ] Metrics
   - Metric name:
   - [Optional] Aggregation method:
@@ -1013,13 +1033,13 @@ implementation difficulties, etc.).
 -->
 
 ### Dependencies
-
+None
 <!--
 This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
-
+A CCI Driver (daemonset) will be required to handle pods which need cci driver resource managment
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
 as node-level agents (e.g. specific version of CRI). Focus on external or
@@ -1044,6 +1064,8 @@ Further performance benchmarks will be done in Beta Phase
 
 ###### Will enabling / using this feature result in any new API calls?
 
+For Pods requiring CCI Driver the admission, container add and container removal operations will be handled via 
+api call to external CCI Driver. Remaining pods should be handled as before.
 <!--
 Describe them, providing:
   - API call type (e.g. PATCH pods)
@@ -1059,6 +1081,7 @@ Focusing mostly on:
 
 ###### Will enabling / using this feature result in introducing new API types?
 
+A helper API to create CCI Drivers (CCI Driver Factory) can be integrated as staged repo.
 <!--
 Describe them, providing:
   - API type
@@ -1068,6 +1091,8 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
+No 
+
 <!--
 Describe them, providing:
   - Which API(s):
@@ -1076,6 +1101,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+Optional CCI driver association mechanism bound to pod spec. One realistion can be an optional driver name attribute.
 <!--
 Describe them, providing:
   - API type(s):
@@ -1084,7 +1110,7 @@ Describe them, providing:
 -->
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
-
+No
 <!--
 Look at the [existing SLIs/SLOs].
 
@@ -1095,7 +1121,7 @@ Think about adding additional work or introducing new steps in between
 -->
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
-  
+No  
 <!--
 Things to keep in mind include: additional in-memory state, additional
 non-trivial computations, excessive access to disks (including increased log
@@ -1132,8 +1158,10 @@ a given std. QoS Model.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-###### What are other known failure modes?
+Feature lives completly in kubelet and will not be impacted directly. 
 
+###### What are other known failure modes?
+TBD
 <!--
 For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
@@ -1149,8 +1177,14 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+We plan to provide sufficient logging information inside kubelet log to help determine
+problems with CCI Resource Management Stack. Additionally CCI Driver implementations should 
+consider integrating proper logging mechanism and error messages to help determine any 
+issues during operation.
+
 ## Implementation History
 
+TBD
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
@@ -1177,7 +1211,7 @@ information to express the idea and why it was not acceptable.
 -->
   We could choose, instead, to continually extend existing Kubelet managers.  This is
   already complicated and becomes more so as users want more and more specialty use
-  cases.  Additionally, chip companies are coming up with increasingly complicatde 
+  cases.  Additionally, chip companies are coming up with increasingly complicated 
   architecture and the community will not want to spend time and resources supporting
   odd changes particular for particular chipsets.  Rather, we should choose to reduce
   complexity within the Kubelet over time.
