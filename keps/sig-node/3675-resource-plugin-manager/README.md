@@ -85,21 +85,37 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+    - [Alpha Goals](#alpha-goals)
+    - [Beta &amp; Post-Beta Goals](#beta--post-beta-goals)
   - [Non-Goals](#non-goals)
+    - [Not In Scope for Alpha](#not-in-scope-for-alpha)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
+    - [Custom workloads, such as HPC/AI/ML](#custom-workloads-such-as-hpcaiml)
+    - [Power optimization of workloads](#power-optimization-of-workloads)
+    - [Research of new resource management patterns within the cloud](#research-of-new-resource-management-patterns-within-the-cloud)
+    - [User-specific plugins](#user-specific-plugins)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+    - [Compute Specification Option](#compute-specification-option)
+      - [Example 1: Attributed-based resource specification](#example-1-attributed-based-resource-specification)
+      - [Example 2.: Policy-based resource specification](#example-2-policy-based-resource-specification)
+      - [Resource Manager Architecture](#resource-manager-architecture)
+      - [Allocation &amp; Container Removal Flow](#allocation--container-removal-flow)
   - [Test Plan](#test-plan)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha to Beta](#alpha-to-beta)
+    - [Beta to GA](#beta-to-ga)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+    - [Operational Requirements for Alpha:](#operational-requirements-for-alpha)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
@@ -108,7 +124,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed](#infrastructure-needed-optional)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -1039,7 +1055,7 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
-A CCI Driver (daemonset) will be required to handle pods which need cci driver resource managment
+A CCI Driver (daemonset) will be required to handle pods which need cci driver resource management.
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
 as node-level agents (e.g. specific version of CRI). Focus on external or
