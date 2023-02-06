@@ -651,7 +651,15 @@ alpha with a reasonable timeout.
 
 ##### Beta & GA Architectural Considerations
 
+For Beta Phase the bridging between CPU manager and CCI Drivers has to be fully covered 
+for none and static policies. As the memory manager implements a static policy to handle memory affinity 
+requests a similar bridging approach inside the memory manager policy will be considered. A simplification 
+of the integration inside both managers will be target of the beta graduation process.
 
+A possible integation with topology manager could follow by implementing the topology hints 
+interface for the CCI Manager which will use data extracted from CCI Store. This will 
+require such data to be provided by CCI Drivers and the CCI store has to be extended to 
+be able to handle it correctly for serving the corresponding topology hints calls.
 
 ### Test Plan
 
