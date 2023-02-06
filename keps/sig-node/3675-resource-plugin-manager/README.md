@@ -563,9 +563,7 @@ following interface to manage resource sets.
 
 3. Integration The Container Compute Interface “CCI” inside None and Static CPU Manager policies<br>
 The synchronization of cpuset state is done by a new policy component inside the 
-cpu manager – “CCI” which will be integrated inside None and Static. For simplicity in alpha version we plan to support 
-best-effort QoS for all Pods not requiring a resource management driver. 
-In later phases we plan to support  Pods requiring the static policy without resource driver(goal for Beta). 
+cpu manager which will be integrated inside the None and Static policies. For simplicity in alpha version we plan to support best-effort QoS for all Pods not requiring a resource management driver (equivalent to none policy). In later phases we plan to support Pods requiring the static policy without the need of resource driver (goal for Beta). The component acts as a bridge between CCI drivers and CPU manager. The drivers provide a decision (resource set stored in CCI Store) about a certain allocation and and cpu manager applies the given cpuset. Similar appoach could be followed with memory management.
 
 4. CCI Drivers Plugin Interface<br>
 The initial interface of resource management plugins is very simple and consists 
@@ -651,6 +649,9 @@ container also from the cpu manager state and update the available cpus based on
 available resources returned by the cci store. All blocking rpc calls are configured in
 alpha with a reasonable timeout.
 
+##### Beta & GA Architectural Considerations
+
+
 
 ### Test Plan
 
@@ -694,12 +695,13 @@ extending the production code to implement this enhancement.
 
 *	CCI Resource Manager: target code cvg >=80%
 *	CCI Store: target code cvg >=80%
-*	CCI CPU Manager Policy: target code cvg >=80%
+*	CCI CPU Manager Policy Component: target code cvg >=80%
 *	CCI Drivers Factory API: target code cvg >=80%
 
 ###### BETA
 
-*	Introduce fail-safety tests
+*	CPU Manager None and Static Policy Integration with CCI
+* Introduce fail-safety tests
 *	Performance/Scalabilty tests
 
 
@@ -708,6 +710,7 @@ extending the production code to implement this enhancement.
 * CPU and CCI Manager Integration test: driver-based allocation and best-effort QoS 
 * State Consistency (CPU Manager + CCI) integrateion test
 ###### BETA
+* CPU Manager None, Static Policy Integration with CCI
 * CPU, Memory, Topology and CCI Manager Integration test
 *	Further integration tests with Device Manager and DRA
 *	Integration test including static QoS and driver-based allocation
@@ -724,7 +727,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 ###### Alpha
 *	E2E test with mocked CCI driver 
 ###### BETA
-*	End-to-End tests including both CCI Driver Allocations and cpu manager allocations
+*	End-to-End tests including both CCI Driver Allocations and cpu & memory manager allocations
 *	End-to-End tests including CCI Driver Allocations , cpu manager allocations amd devices
 <!--
 This question should be filled when targeting a release.
@@ -1177,6 +1180,15 @@ If a CCI Plugin fails, Pods which were about to be allocated will fail. Based on
 requirements a fallback mechanism can be implemented where such Pods fallback to 
 a given std. QoS Model.
 
+![image](CCITroubleshooting.jpg)<br>
+
+Fig.5.: Troubleshooting Flows: Handling of pods requiring CCI driver and standard pods wihtout CCI Driver requirements in the case of unhealthy driver.<br><br>
+
+To illustrate this lets consider some of the flows described on Fig.5. We distriguish 
+between pods handled by CCI drivers(group 1 pods) and standard Pods(group 2 pods). Until the CCI driver is not started the pod admission of group 1 pods will fail with an admission error due to driver unavailabilty. Group 2 pods are not impaceted by and they
+can be deployed on the cluster. After the CCI Driver comes online  the addmission of 
+group 1 pods can continue. The admission transactions of group 1 and 2 are mutually exclusive. In later time the driver becomes unhealthy and the admission of second pod 
+from group 1 will fail.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
